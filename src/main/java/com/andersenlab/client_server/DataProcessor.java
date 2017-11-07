@@ -3,7 +3,7 @@ package com.andersenlab.client_server;
 import java.util.concurrent.TimeUnit;
 
 public class DataProcessor {
-    private static final int timeout = 3;
+    private static final int timeout = 1;
 
     public String processData(String data) throws Exception {
         TimeUnit.SECONDS.sleep(timeout);

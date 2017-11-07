@@ -1,7 +1,6 @@
 package com.andersenlab.client_server.udp;
 
 import com.andersenlab.client_server.ServerInterface;
-import com.andersenlab.client_server.ThreadLogHelper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -23,9 +22,7 @@ public class Server implements ServerInterface {
             socket = new DatagramSocket(port);
             while (!stop) {
                 socket.receive(packet);
-                String request = new String(packet.getData(), 0, packet.getLength());
-                logger.debug("Request " + request + " was received by Server. " + ThreadLogHelper.getThreadMessage());
-                requestHandler.handle(request);
+                requestHandler.handle(packet);
             }
         } catch (Exception e) {
             logger.error(e.getMessage());

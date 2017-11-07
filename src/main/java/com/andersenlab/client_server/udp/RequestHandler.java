@@ -8,13 +8,20 @@ import org.apache.logging.log4j.Logger;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.util.concurrent.TimeUnit;
 
 class RequestHandler {
+    private static final int MAX_NUMBER_OF_THREADS = 10;
+    private int numberOfThreads;
     private static final Logger logger = LogManager.getLogger(RequestHandler.class);
 
-    void handle(String request) {
-        DataProcessorThread thread = new DataProcessorThread(request);
+    void handle(DatagramPacket packet) throws Exception {
+        while (numberOfThreads >= MAX_NUMBER_OF_THREADS) {
+            TimeUnit.SECONDS.sleep(1);
+        }
+        DataProcessorThread thread = new DataProcessorThread(packet);
         thread.start();
+        numberOfThreads++;
         logger.debug("Started new thread. " + ThreadLogHelper.getThreadMessage());
     }
 
@@ -24,8 +31,8 @@ class RequestHandler {
         private DataProcessor dataProcessor = new DataProcessor();
         private String dataToProcess;
 
-        DataProcessorThread(String dataToProcess) {
-            this.dataToProcess = dataToProcess;
+        DataProcessorThread(DatagramPacket packet) {
+            this.dataToProcess = new String(packet.getData(), 0, packet.getLength());
         }
 
         public void run() {
@@ -34,6 +41,8 @@ class RequestHandler {
                 logger.debug("Data " + dataToProcess + " was processed. " + ThreadLogHelper.getThreadMessage());
             } catch (Exception e) {
                 logger.error(e.getMessage());
+            } finally {
+                numberOfThreads--;
             }
         }
 

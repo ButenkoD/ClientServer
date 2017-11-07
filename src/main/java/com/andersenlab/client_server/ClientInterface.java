@@ -1,5 +1,7 @@
 package com.andersenlab.client_server;
 
+import java.util.List;
+
 public interface ClientInterface {
-    String[] sendMessagesAndGetResponses(String[] messages) throws Exception;
+    List<String> sendMessagesAndGetResponses(String[] messages) throws Exception;
 }

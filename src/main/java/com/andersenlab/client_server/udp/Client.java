@@ -7,6 +7,8 @@ import org.apache.logging.log4j.Logger;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Client implements ClientInterface {
     private static final int sendPort = 22211;
@@ -15,17 +17,17 @@ public class Client implements ClientInterface {
     private static final String localhost = "127.0.0.1";
     private static final Logger logger = LogManager.getLogger(Client.class);
 
-    public String[] sendMessagesAndGetResponses(String[] messages) {
+    public List<String> sendMessagesAndGetResponses(String[] messages) {
         DatagramSocket clientSocket = null;
         try {
             clientSocket = new DatagramSocket(responsePort);
             byte[] receiveData = new byte[bufferSize];
             DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-            String[] responses = new String[messages.length];
+            List<String> responses = new ArrayList<>();
             sendMessages(messages);
             for (int i = 0; i < messages.length; i++) {
                 clientSocket.receive(receivePacket);
-                responses[i] = new String(receivePacket.getData(), 0, receivePacket.getLength());
+                responses.add(i, new String(receivePacket.getData(), 0, receivePacket.getLength()));
             }
             return responses;
         } catch (Exception e) {

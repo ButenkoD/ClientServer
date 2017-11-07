@@ -4,6 +4,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.CoreMatchers.containsString;
@@ -11,36 +13,42 @@ import static org.junit.Assert.assertThat;
 
 public abstract class ClientServerBaseTest {
     private ServerInterface server;
-    private Thread thread;
 
     protected abstract ServerInterface getServer();
     protected abstract ClientInterface getClient();
 
     @Before
     public void runServer() throws Exception {
-        thread = new Thread(new Runnable() {
-            public void run() {
+        new Thread(() -> {
                 server = getServer();
                 server.listen();
-            }
-        });
-        thread.start();
+        }).start();
         TimeUnit.SECONDS.sleep(1);
     }
 
     @Test
-    public void testUdp() throws Exception {
-        String[] messages = {"QWE", "ASD", "ZXC"};
-        String[] responses = getClient().sendMessagesAndGetResponses(messages);
+    public void testClientServer() throws Exception {
+        String[] messages = getMessages();
+        List<String> responses = getClient().sendMessagesAndGetResponses(messages);
         for (int i = 0; i < messages.length; i++) {
-            assertThat(responses[i], containsString("'"+messages[i]+"' is processed"));
+            assertThat(responses.get(i), containsString("'"+messages[i]+"' is processed"));
         }
     }
 
     @After
     public void stopServer() {
         server.stop();
-        thread.interrupt();
         System.out.println(ThreadLogHelper.getThreadMessage());
+    }
+
+    private String[] getMessages() {
+        List<String> messages = new ArrayList<>();
+        String[] initMessages = {"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj"};
+        for (String initMessage: initMessages) {
+            for (int i = 0; i < 100; i++) {
+                messages.add(initMessage + Integer.toString(i));
+            }
+        }
+        return messages.toArray(new String[0]);
     }
 }
