@@ -8,8 +8,8 @@ public class ThreadLogHelper {
         return "Processed by thread #" + getThreadId() + ". Number of threads: " + getNumberOfThreads();
     }
 
-    private static long getThreadId() {
-        return Thread.currentThread().getId();
+    private static String getThreadId() {
+        return Thread.currentThread().getName();
     }
 
     private static int getNumberOfThreads() {

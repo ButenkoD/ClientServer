@@ -11,27 +11,35 @@ public class Server implements ServerInterface {
     private static final int port = 22211;
     private static final Logger logger = LogManager.getLogger(Server.class);
     private ServerSocket serverSocket;
-    private RequestHandler requestHandler = new RequestHandler();
+    private final RequestHandler requestHandler = new RequestHandler();
+    private boolean isListening;
 
     public static void main(String[] args) {
         new Server().listen();
     }
 
     public void listen() {
-        try {
-            serverSocket = new ServerSocket(port);
-            while (true) {
-                requestHandler.handle(serverSocket.accept());
+        if (!isListening) {
+            isListening = true;
+            try {
+                serverSocket = new ServerSocket(port);
+                while (true) {
+                    requestHandler.handle(serverSocket.accept());
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            } finally {
+                safelyClose(serverSocket);
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-        } finally {
-            safelyClose(serverSocket);
         }
     }
 
     public void stop() {
-        safelyClose(serverSocket);
+        if (isListening) {
+            isListening = false;
+            requestHandler.stop();
+            safelyClose(serverSocket);
+        }
     }
 
     private void safelyClose(Closeable closeable) {

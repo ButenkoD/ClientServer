@@ -21,7 +21,7 @@ public class Client implements ClientInterface {
     public static void main(String[] args) {
         String[] mesages = {"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii"};
         for (String response: new Client().sendMessagesAndGetResponses(mesages)) {
-            System.out.println(response);
+            logger.debug(response);
         }
     }
 
@@ -38,26 +38,27 @@ public class Client implements ClientInterface {
     private void sendMessages(String[] messages) throws Exception {
         List<Socket> sockets = new ArrayList<>();
         for (int i = 0; i < messages.length; i++) {
-            sockets.add(i, makeRequestAndGetSocket(messages[i]));
+            Socket socket = new Socket(localhost, port);
+            sockets.add(i, socket);
+            makeRequest(socket, messages[i]);
         }
         for (int i = 0; i < sockets.size(); i++) {
             responses.add(i, getResponse(sockets.get(i)));
         }
     }
 
-    private Socket makeRequestAndGetSocket(String message) throws Exception {
-        Socket socket = new Socket(localhost, port);
+    private void makeRequest(Socket socket, String message) throws Exception {
         PrintWriter requestWriter = new PrintWriter(socket.getOutputStream());
         logger.debug("Sent request: " + message);
         requestWriter.println(message);
         requestWriter.flush();
-        return socket;
     }
 
     private String getResponse(Socket socket) {
         BufferedReader responseReader = null;
         try {
             responseReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            logger.debug("Started to wait for response");
             return responseReader.readLine();
         } catch (Exception e) {
             logger.error(e.getMessage());
