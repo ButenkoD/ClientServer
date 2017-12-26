@@ -8,16 +8,14 @@ import org.apache.logging.log4j.Logger;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
+import java.util.Arrays;
 import java.util.Iterator;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class AsynchronousServer implements ServerInterface {
     private static final int port = 22211;
+    private static final String endOfLine = "\n";
     private static final Logger logger = LogManager.getLogger(Server.class);
     private final DataProcessor dataProcessor = new DataProcessor();
-    private static final int MAX_NUMBER_OF_THREADS = 10;
-    private final ExecutorService executorService = Executors.newFixedThreadPool(MAX_NUMBER_OF_THREADS);
     private Selector selector;
     private boolean isListening;
 
@@ -29,8 +27,8 @@ public class AsynchronousServer implements ServerInterface {
         if (!isListening) {
             isListening = true;
             try (
-                    Selector selector = Selector.open();
-                    ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()
+                Selector selector = Selector.open();
+                ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()
             ) {
                 this.selector = selector;
                 initServerSocketChannel(serverSocketChannel);
@@ -45,17 +43,15 @@ public class AsynchronousServer implements ServerInterface {
     public void stop() {
         if (isListening) {
             isListening = false;
-            executorService.shutdown();
             try {
                 if (selector != null) {
                     selector.close();
                 }
             } catch (Exception exception) {
-                logger.error("Can't close selectot");
+                logger.error("Can't close selector");
             }
         }
     }
-
 
     private void initServerSocketChannel(ServerSocketChannel serverSocketChannel) throws Exception {
         serverSocketChannel.bind(new InetSocketAddress("localhost", port));
@@ -79,6 +75,7 @@ public class AsynchronousServer implements ServerInterface {
                         readAndAnswer(selectionKey);
                     }
                 }
+
                 selectedKeys.remove();
             }
         }
@@ -88,39 +85,72 @@ public class AsynchronousServer implements ServerInterface {
     private void registerAsReadable(ServerSocketChannel serverSocketChannel) throws Exception {
         SocketChannel clientSocketChannel = serverSocketChannel.accept();
         clientSocketChannel.configureBlocking(false);
-        clientSocketChannel.register(selector, SelectionKey.OP_READ);
+        clientSocketChannel.register(selector, SelectionKey.OP_READ, new RequestStringStack());
     }
 
     private void readAndAnswer(SelectionKey selectionKey) throws Exception {
         SocketChannel clientSocketChannel = (SocketChannel) selectionKey.channel();
+        RequestStringStack requestStack = (RequestStringStack) selectionKey.attachment();
+        ByteBuffer buffer = ByteBuffer.allocate(4);
         try {
-            ByteBuffer buffer = ByteBuffer.allocate(256);
-            clientSocketChannel.read(buffer);
-            String requestString = new String(buffer.array()).trim();
-            if (!requestString.equals("")) {
-                if (requestString.equals("exit")) {
-                    stop();
-                    return;
-                }
-                answer(clientSocketChannel, requestString);
+            int lengthOfRead = clientSocketChannel.read(buffer);
+            while (!requestStack.isFinishedLine() && lengthOfRead > 0) {
+                requestStack.pushChunk(Arrays.copyOfRange(buffer.array(), 0, lengthOfRead));
+                buffer.clear();
+                lengthOfRead = clientSocketChannel.read(buffer);
             }
-            buffer.clear();
+            handleCollectedRequest(clientSocketChannel, requestStack);
         } catch (Exception exception) {
-            logger.error("1");
             logger.error(exception);
         }
     }
 
+    private void handleCollectedRequest(SocketChannel clientSocketChannel, RequestStringStack requestStack) {
+        if (requestStack.getString().equals("exit")) {
+            stop();
+        } else {
+            answer(clientSocketChannel, requestStack.getString());
+        }
+    }
+
     private void answer(SocketChannel clientSocketChannel, String requestString) {
-        executorService.execute(() -> {
-            try {
-                String responseString = dataProcessor.processData(requestString);
-                clientSocketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
-                clientSocketChannel.close();
-                logger.debug("sent response: " + responseString);
-            } catch (Exception exception) {
-                logger.error(exception);
+        try {
+            String responseString = dataProcessor.processData(requestString) + "\n";
+            clientSocketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
+            clientSocketChannel.close();
+            logger.debug("sent response: " + responseString);
+        } catch (Exception exception) {
+            logger.error(exception);
+        }
+    }
+
+    private static class RequestStringStack {
+        private String string = "";
+
+        private void pushChunk(String chunk) {
+            string += chunk;
+        }
+
+        private void pushChunk(byte[] bytes) {
+            pushChunk(new String(trimBytes(bytes)));
+        }
+
+        private String getString() {
+            return string.trim();
+        }
+
+        private boolean isFinishedLine() {
+            return string.endsWith(endOfLine);
+        }
+
+        private static byte[] trimBytes(byte[] bytes)
+        {
+            int i = bytes.length - 1;
+            while (i >= 0 && bytes[i] == 0) {
+                --i;
             }
-        });
+
+            return Arrays.copyOf(bytes, i + 1);
+        }
     }
 }

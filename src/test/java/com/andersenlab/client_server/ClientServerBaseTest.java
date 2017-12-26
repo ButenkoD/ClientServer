@@ -43,7 +43,8 @@ public abstract class ClientServerBaseTest {
 
     private String[] getMessages() {
         List<String> messages = new ArrayList<>();
-        String[] initMessages = {"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj"};
+        String[] initMessages = {"aaa", "bbb", "ccc"};
+//        String[] initMessages = {"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj"};
         for (String initMessage: initMessages) {
             for (int i = 0; i < 100; i++) {
                 messages.add(initMessage + Integer.toString(i));

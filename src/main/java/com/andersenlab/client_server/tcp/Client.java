@@ -19,7 +19,8 @@ public class Client implements ClientInterface {
     private static List<String> responses = new ArrayList<>();
 
     public static void main(String[] args) {
-        String[] mesages = {"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii"};
+//        String[] mesages = {"aaa\n", "b", "c\n", "d", "e", "f", "g", "h", "i"};
+        String[] mesages = {"aaa0", "abcdefghjk\n", "ccc\n", "ddd\n", "eee\n", "fff\n", "ggg\n", "hhh\n", "iii\n"};
         for (String response: new Client().sendMessagesAndGetResponses(mesages)) {
             logger.debug(response);
         }
@@ -59,7 +60,9 @@ public class Client implements ClientInterface {
         try {
             responseReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             logger.debug("Started to wait for response");
-            return responseReader.readLine();
+            String response = responseReader.readLine();
+            logger.debug("response: " + response);
+            return response;
         } catch (Exception e) {
             logger.error(e.getMessage());
             return null;
