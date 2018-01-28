@@ -19,8 +19,7 @@ public class Client implements ClientInterface {
     private static List<String> responses = new ArrayList<>();
 
     public static void main(String[] args) {
-//        String[] mesages = {"aaa\n", "b", "c\n", "d", "e", "f", "g", "h", "i"};
-        String[] mesages = {"aaa0", "abcdefghjk\n", "ccc\n", "ddd\n", "eee\n", "fff\n", "ggg\n", "hhh\n", "iii\n"};
+        String[] mesages = {"aaa0", "abcdefghjk\n", "ccc\n", "ddd\n", "eee\n", "fff\n", "ggg\n", "hhh\n", "iii\n", "stop\n exit\n"};
         for (String response: new Client().sendMessagesAndGetResponses(mesages)) {
             logger.debug(response);
         }

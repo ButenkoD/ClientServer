@@ -7,12 +7,16 @@ import org.apache.logging.log4j.Logger;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.*;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
 
 public class AsynchronousServer implements ServerInterface {
     private static final int port = 22211;
+    private static final int byteBufferSize = 4;
     private static final String endOfLine = "\n";
     private static final Logger logger = LogManager.getLogger(Server.class);
     private final DataProcessor dataProcessor = new DataProcessor();
@@ -91,7 +95,7 @@ public class AsynchronousServer implements ServerInterface {
     private void readAndAnswer(SelectionKey selectionKey) throws Exception {
         SocketChannel clientSocketChannel = (SocketChannel) selectionKey.channel();
         RequestStringStack requestStack = (RequestStringStack) selectionKey.attachment();
-        ByteBuffer buffer = ByteBuffer.allocate(4);
+        ByteBuffer buffer = ByteBuffer.allocate(byteBufferSize);
         try {
             int lengthOfRead = clientSocketChannel.read(buffer);
             while (!requestStack.isFinishedLine() && lengthOfRead > 0) {
@@ -99,7 +103,9 @@ public class AsynchronousServer implements ServerInterface {
                 buffer.clear();
                 lengthOfRead = clientSocketChannel.read(buffer);
             }
-            handleCollectedRequest(clientSocketChannel, requestStack);
+            if (requestStack.isFinishedLine()) {
+                handleCollectedRequest(clientSocketChannel, requestStack);
+            }
         } catch (Exception exception) {
             logger.error(exception);
         }
@@ -127,12 +133,16 @@ public class AsynchronousServer implements ServerInterface {
     private static class RequestStringStack {
         private String string = "";
 
-        private void pushChunk(String chunk) {
+        private void pushChunkBeforeEndOfLine(String chunk) {
+            if (chunk.contains(endOfLine)) {
+                int endOfLineStartPosition = chunk.indexOf(endOfLine);
+                chunk = chunk.substring(0, endOfLineStartPosition + endOfLine.length());
+            }
             string += chunk;
         }
 
         private void pushChunk(byte[] bytes) {
-            pushChunk(new String(trimBytes(bytes)));
+            pushChunkBeforeEndOfLine(new String(trimBytes(bytes)));
         }
 
         private String getString() {
