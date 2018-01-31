@@ -5,6 +5,7 @@ import com.andersenlab.client_server.ServerInterface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -13,15 +14,19 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class AsynchronousServer implements ServerInterface {
     private static final int port = 22211;
     private static final int byteBufferSize = 4;
     private static final String endOfLine = "\n";
-    private static final Logger logger = LogManager.getLogger(Server.class);
+    private static final Logger logger = LogManager.getLogger(AsynchronousServer.class);
     private final DataProcessor dataProcessor = new DataProcessor();
     private Selector selector;
     private boolean isListening;
+    private TreeMap<Long, SocketChannel> socketChannelQueue = new TreeMap<>();
+    private TreeMap<Long, String> requestByQueueKey = new TreeMap<>();
 
     public static void main(String[] args) {
         new AsynchronousServer().listen();
@@ -69,7 +74,6 @@ public class AsynchronousServer implements ServerInterface {
             Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
             while (selectedKeys.hasNext()) {
                 SelectionKey selectionKey = selectedKeys.next();
-
                 if (selectionKey.isValid()) {
                     if (selectionKey.isAcceptable()) {
                         registerAsReadable(serverSocketChannel);
@@ -81,6 +85,7 @@ public class AsynchronousServer implements ServerInterface {
                 }
 
                 selectedKeys.remove();
+                proceedAnswerQueue();
             }
         }
         logger.debug("Selector was closed");
@@ -115,18 +120,44 @@ public class AsynchronousServer implements ServerInterface {
         if (requestStack.getString().equals("exit")) {
             stop();
         } else {
-            answer(clientSocketChannel, requestStack.getString());
+            addToQueue(clientSocketChannel, requestStack.getString());
+        }
+    }
+
+    private void addToQueue(SocketChannel clientSocketChannel, String requestString) {
+        Long queueKey = System.currentTimeMillis();
+        socketChannelQueue.put(queueKey, clientSocketChannel);
+        requestByQueueKey.put(queueKey, requestString);
+    }
+
+    private void proceedAnswerQueue() {
+        for (Map.Entry socketChannelEntry: socketChannelQueue.entrySet()) {
+            Long entryKey = (Long) socketChannelEntry.getKey();
+            String requestString = requestByQueueKey.get(entryKey);
+            SocketChannel clientSocketChannel = (SocketChannel) socketChannelEntry.getValue();
+            answer(clientSocketChannel, requestString);
         }
     }
 
     private void answer(SocketChannel clientSocketChannel, String requestString) {
         try {
-            String responseString = dataProcessor.processData(requestString) + "\n";
-            clientSocketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
-            clientSocketChannel.close();
-            logger.debug("sent response: " + responseString);
+            String responseString = dataProcessor.processData(requestString) + endOfLine;
+            if (clientSocketChannel.isOpen()) {
+                clientSocketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
+                logger.debug("sent response: " + responseString);
+            }
         } catch (Exception exception) {
             logger.error(exception);
+        } finally {
+            safelyClose(clientSocketChannel);
+        }
+    }
+
+    private void safelyClose(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (Exception exeption) {
+            logger.error(exeption);
         }
     }
 
