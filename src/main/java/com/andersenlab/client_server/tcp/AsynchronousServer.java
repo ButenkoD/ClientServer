@@ -5,7 +5,6 @@ import com.andersenlab.client_server.ServerInterface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -25,8 +24,7 @@ public class AsynchronousServer implements ServerInterface {
     private final DataProcessor dataProcessor = new DataProcessor();
     private Selector selector;
     private boolean isListening;
-    private TreeMap<Long, SocketChannel> socketChannelQueue = new TreeMap<>();
-    private TreeMap<Long, String> requestByQueueKey = new TreeMap<>();
+    private TreeMap<Long, RequestHolder> requestByQueueKey = new TreeMap<>();
 
     public static void main(String[] args) {
         new AsynchronousServer().listen();
@@ -69,23 +67,37 @@ public class AsynchronousServer implements ServerInterface {
     }
 
     private void performListening(ServerSocketChannel serverSocketChannel) throws Exception {
+        long timeout = 1000;
         while (selector.isOpen()) {
-            selector.select();
-            Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
-            while (selectedKeys.hasNext()) {
-                SelectionKey selectionKey = selectedKeys.next();
-                if (selectionKey.isValid()) {
-                    if (selectionKey.isAcceptable()) {
-                        registerAsReadable(serverSocketChannel);
+            if (selector.select(timeout) > 0) {
+                Iterator<SelectionKey> selectedKeys = selector.selectedKeys().iterator();
+                while (selectedKeys.hasNext()) {
+                    SelectionKey selectionKey = selectedKeys.next();
+                    if (selectionKey.isValid()) {
+                        if (selectionKey.isAcceptable()) {
+                            registerAsReadable(serverSocketChannel);
+                        }
+
+                        if (selectionKey.isReadable()) {
+                            readAndAnswer(selectionKey);
+                        }
                     }
 
-                    if (selectionKey.isReadable()) {
-                        readAndAnswer(selectionKey);
-                    }
+                    selectedKeys.remove();
                 }
-
-                selectedKeys.remove();
-                proceedAnswerQueue();
+            }
+            long now = System.currentTimeMillis();
+            Iterator<Map.Entry<Long, RequestHolder>> iterator = requestByQueueKey.entrySet().iterator();
+            for (; iterator.hasNext();) {
+                Map.Entry<Long, RequestHolder> requestEntry = iterator.next();
+                Long entryKey = requestEntry.getKey();
+                if (now >= entryKey + 1000) {
+                    answer(requestEntry.getValue());
+                    iterator.remove();
+                } else {
+                    timeout = entryKey + 1000 - now;
+                    break;
+                }
             }
         }
         logger.debug("Selector was closed");
@@ -94,12 +106,12 @@ public class AsynchronousServer implements ServerInterface {
     private void registerAsReadable(ServerSocketChannel serverSocketChannel) throws Exception {
         SocketChannel clientSocketChannel = serverSocketChannel.accept();
         clientSocketChannel.configureBlocking(false);
-        clientSocketChannel.register(selector, SelectionKey.OP_READ, new RequestStringStack());
+        clientSocketChannel.register(selector, SelectionKey.OP_READ, new RequestHolder.RequestStringStack());
     }
 
     private void readAndAnswer(SelectionKey selectionKey) throws Exception {
         SocketChannel clientSocketChannel = (SocketChannel) selectionKey.channel();
-        RequestStringStack requestStack = (RequestStringStack) selectionKey.attachment();
+        RequestHolder.RequestStringStack requestStack = (RequestHolder.RequestStringStack) selectionKey.attachment();
         ByteBuffer buffer = ByteBuffer.allocate(byteBufferSize);
         try {
             int lengthOfRead = clientSocketChannel.read(buffer);
@@ -109,89 +121,37 @@ public class AsynchronousServer implements ServerInterface {
                 lengthOfRead = clientSocketChannel.read(buffer);
             }
             if (requestStack.isFinishedLine()) {
-                handleCollectedRequest(clientSocketChannel, requestStack);
+                handleCollectedRequest(new RequestHolder(clientSocketChannel, requestStack));
             }
         } catch (Exception exception) {
             logger.error(exception);
         }
     }
 
-    private void handleCollectedRequest(SocketChannel clientSocketChannel, RequestStringStack requestStack) {
-        if (requestStack.getString().equals("exit")) {
+    private void handleCollectedRequest(RequestHolder requestHolder) {
+        if (requestHolder.getRequestStringStack().getString().equals("exit")) {
             stop();
         } else {
-            addToQueue(clientSocketChannel, requestStack.getString());
+            addToQueue(requestHolder);
         }
     }
 
-    private void addToQueue(SocketChannel clientSocketChannel, String requestString) {
+    private void addToQueue(RequestHolder requestHolder) {
         Long queueKey = System.currentTimeMillis();
-        socketChannelQueue.put(queueKey, clientSocketChannel);
-        requestByQueueKey.put(queueKey, requestString);
+        requestByQueueKey.put(queueKey, requestHolder);
     }
 
-    private void proceedAnswerQueue() {
-        for (Map.Entry socketChannelEntry: socketChannelQueue.entrySet()) {
-            Long entryKey = (Long) socketChannelEntry.getKey();
-            String requestString = requestByQueueKey.get(entryKey);
-            SocketChannel clientSocketChannel = (SocketChannel) socketChannelEntry.getValue();
-            answer(clientSocketChannel, requestString);
-        }
-    }
-
-    private void answer(SocketChannel clientSocketChannel, String requestString) {
-        try {
-            String responseString = dataProcessor.processData(requestString) + endOfLine;
-            if (clientSocketChannel.isOpen()) {
-                clientSocketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
+    private void answer(RequestHolder requestHolder) {
+        try (
+            SocketChannel socketChannel = requestHolder.getSocketChannel()
+        ) {
+            String responseString = dataProcessor.processData(requestHolder.getRequestStringStack().getString()) + endOfLine;
+            if (socketChannel.isOpen()) {
+                socketChannel.write(ByteBuffer.wrap(responseString.getBytes()));
                 logger.debug("sent response: " + responseString);
             }
         } catch (Exception exception) {
             logger.error(exception);
-        } finally {
-            safelyClose(clientSocketChannel);
-        }
-    }
-
-    private void safelyClose(Closeable closeable) {
-        try {
-            closeable.close();
-        } catch (Exception exeption) {
-            logger.error(exeption);
-        }
-    }
-
-    private static class RequestStringStack {
-        private String string = "";
-
-        private void pushChunkBeforeEndOfLine(String chunk) {
-            if (chunk.contains(endOfLine)) {
-                int endOfLineStartPosition = chunk.indexOf(endOfLine);
-                chunk = chunk.substring(0, endOfLineStartPosition + endOfLine.length());
-            }
-            string += chunk;
-        }
-
-        private void pushChunk(byte[] bytes) {
-            pushChunkBeforeEndOfLine(new String(trimBytes(bytes)));
-        }
-
-        private String getString() {
-            return string.trim();
-        }
-
-        private boolean isFinishedLine() {
-            return string.endsWith(endOfLine);
-        }
-
-        private static byte[] trimBytes(byte[] bytes)
-        {
-            int i = bytes.length - 1;
-            while (i >= 0 && bytes[i] == 0) {
-                --i;
-            }
-
-            return Arrays.copyOf(bytes, i + 1);
         }
     }
 }

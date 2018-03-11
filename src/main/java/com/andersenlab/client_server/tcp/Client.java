@@ -50,6 +50,7 @@ public class Client implements ClientInterface {
     private void makeRequest(Socket socket, String message) throws Exception {
         PrintWriter requestWriter = new PrintWriter(socket.getOutputStream());
         logger.debug("Sent request: " + message);
+        Thread.sleep(200);
         requestWriter.println(message);
         requestWriter.flush();
     }
